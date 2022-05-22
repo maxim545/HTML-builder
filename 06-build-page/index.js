@@ -1,110 +1,92 @@
 const fs = require('fs');
 const path = require('path');
-let count = 0;
+const fsPromises = fs.promises;
 
-function makeCopy(from, to) {
-  fs.mkdir(to, { recursive: true}, (err) => {
-    if (err) throw err;
-    else {
-      fs.readdir(from, {withFileTypes: true}, (err, files) => {
-        if (err) throw err;
-        else {
-          files.forEach(el => {
-            if (el.isFile()) {
-              fs.copyFile(path.join(from, el.name), path.join(to, el.name), (err) => {
-                if (err) throw err;
-                
-              });
-            } else {
-              makeCopy(path.join(from, el.name), path.join(to, el.name));
-            }
-          });
-        }
-      });
-    }
-  });
-  count++;
-  if (count===2) {
-    htmlMaker();
+const pathFrom = path.join(__dirname, 'assets');
+const pathTo = path.join(__dirname, 'project-dist', 'assets');
+
+const pathToStylesFolder = path.join(__dirname, 'styles');
+const pathToStyle = path.join(__dirname, 'project-dist', 'style.css');
+
+const pathToIndex = path.join(__dirname, 'project-dist', 'index.html');
+const pathToTemplate = path.join(__dirname, 'template.html');
+const pathToComponents = path.join(__dirname, 'components');
+
+async function copyFolder(src, dest) {
+  await fsPromises.mkdir(dest, { recursive: true });
+  let entries = await fsPromises.readdir(src, { withFileTypes: true });
+  for (let entry of entries) {
+    let srcPath = path.join(src, entry.name);
+    let destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) { await copyFolder(srcPath, destPath); }
+    else { await fsPromises.copyFile(srcPath, destPath); }
   }
 }
 
-function removeFolder () {
-  fs.access(`${__dirname}/project-dist`, error => {
-    if (!error) {
-      fs.rm(`${__dirname}/project-dist`, { recursive: true}, (err) => {
-        if (err) throw err;
-        else {
-          makeCopy(`${__dirname}/assets`, `${__dirname}/project-dist/assets`);
-        }
-      });
-    } else {
-      makeCopy(`${__dirname}/assets`, `${__dirname}/project-dist/assets`);
-    }
-  });
-}
-removeFolder();
-
-function htmlMaker() {
-  const pathToIndex = path.join(__dirname, 'project-dist/index.html');
-  fs.createWriteStream(pathToIndex, 'utf-8');
-  const pathToTemplate = path.join(__dirname, 'template.html');
-  const pathToComponents = path.join(__dirname, 'components');
-  const pathToStylesFolder = path.join(__dirname, 'styles');
-  fs.readFile(pathToTemplate, 'utf8', function (err, data) {
-    if (err) { throw err; }
-    let tagsArr = findText(data);
-    function findText (str) {
-      let arr = [];
-      let searchingIndex = 0;
-      let newStr = '';
-      let count = (str.match(/{{/g) || []).length;
-      let count2 = (str.match(/}}/g) || []).length;
-      if (count-count2 !== 0) {console.log('Файл index.html записан не был, т.к. вы указали некоректное название тега в исходном файле - template.html');}
-      else {
-        for (let i = 0; i < count; i++) { 
-          newStr = str.substring(str.indexOf('{{', searchingIndex), str.indexOf('}}', searchingIndex)+2);
-          searchingIndex = str.indexOf('}}', searchingIndex)+2;
-          arr.push(newStr);
-        }
+async function copyStyles() {
+  try {
+    fs.createWriteStream(pathToStyle, 'utf-8');
+    const files = await fsPromises.readdir(pathToStylesFolder, { withFileTypes: true });
+    for await (const file of files) {
+      if (file.isFile() && path.extname(file.name) === '.css') {
+        let pathToCurStyle = path.join(__dirname, 'styles', file.name);
+        fs.readFile(pathToCurStyle, (err, data) => {
+          if (err) throw err;
+          fs.appendFile(pathToStyle, data+'\n', (err) => {
+            if (err) {console.log(err);}
+          }); 
+        });
       }
-      return arr;
     }
-  
-    tagsArr.forEach((el) => {
-      let replaceElement = new RegExp(el, 'g');
-      let componentName = el.substring(2, el.length-2);
-      let pathToComponent = path.join(__dirname, `components/${componentName}.html`);
-      fs.readdir(pathToComponents, (err, files) => {
-        if (err) { throw err; }
-        if (files.includes(componentName+'.html')) {fs.readFile(pathToComponent, (err, component) => {
-          if (err) { throw err; }
-          data = data.replace(replaceElement, component.toString());
-          fs.writeFile(pathToIndex, data, 'utf8', function (err) {
-            if (err) { throw err; }
-          });
-        });}
-        else {
-          console.log(`Шаблонный тег '${el}' заменить невозможно, так как его исходника не сущетсвует в папке 'components'`);
-        }
-      });
-    });
-  });
-  const pathToStyle = path.join(__dirname, 'project-dist/style.css');
-  fs.createWriteStream(pathToStyle, 'utf-8');
-  fs.readdir(pathToStylesFolder, {withFileTypes: true}, (err, files) => {
-    let pathToCurStyle;
-    if (err) throw err;
-    else {
-      files.forEach(a => {
-        if (a.isFile() && path.extname(a.name) === '.css') {
-          pathToCurStyle = path.join(__dirname, `styles/${a.name}`);
-          fs.readFile(pathToCurStyle, (err, data) => {
-            if (err) throw err;
-            fs.appendFile(pathToStyle, data+'\n', function () {}); 
-          });
-        }
-      });
+    
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+async function startBuild() {
+  await fsPromises.rm(pathTo, { recursive: true, force: true }, );
+  await copyFolder(pathFrom, pathTo);
+  await htmlMaker();
+  copyStyles();
+}
+startBuild();
+
+async function htmlMaker() {
+  const data = await getData();
+  const [components, componentsData] = await findComponent();
+  await replaceComponent(data, components, componentsData);
+}
+
+async function getData() {
+  fs.createWriteStream(pathToIndex, 'utf-8');
+  const data = await fsPromises.readFile(pathToTemplate, { withFileTypes: true });
+  return data;
+}
+
+async function findComponent() {
+  const components = await fsPromises.readdir(pathToComponents, { withFileTypes: true });
+  let data;
+  let pathToComponent;
+  let componentsData = {};
+  for await (const file of components) {
+    if (file.isFile() && path.extname(file.name) === '.html') {
+      pathToComponent = path.join(pathToComponents, file.name);
+      data = await fsPromises.readFile(pathToComponent, { withFileTypes: true });
+      componentsData[file.name] = data.toString();
     }
-  });
+  }
+  return [components, componentsData];
+}
+
+async function replaceComponent(data, components, componentsData) {
+  let componentName;
+  data = data.toString();
+  for await (const file of components) {
+    componentName = file.name.substr(0, file.name.lastIndexOf('.'));
+    if (file.isFile() && path.extname(file.name) === '.html' && data.indexOf(`{{${componentName}}}`) !== -1) {
+      data = data.split(`{{${componentName}}}`).join(componentsData[file.name]);
+    }
+  }
+  fsPromises.writeFile(pathToIndex, data);
 }
