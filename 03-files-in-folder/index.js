@@ -9,9 +9,11 @@ async function readFolder() {
   for (const file of files) {
     if (file.isFile()) {
       let pathToFile = path.join(__dirname, 'secret-folder', file.name);
+      let fileName = file.name.replace(path.extname(file.name), '');
+      let fileExt = path.extname(file.name).replace(/[.]/g, '');
       fs.stat(pathToFile, (err, stats) => {
         if (err) throw err;
-        let fileInfo = `${file.name.slice(0, file.name.lastIndexOf('.'))} - ${file.name.slice(file.name.lastIndexOf('.')+1)} - ${(stats.size / 1024).toFixed(1)}Kb`;
+        let fileInfo = `${fileName} - ${fileExt} - ${(stats.size / 1024).toFixed(1)}Kb`;
         console.log(fileInfo);
       });
     }

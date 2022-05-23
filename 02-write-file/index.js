@@ -13,6 +13,13 @@ fs.createWriteStream(pathToTxt, 'utf-8');
 
 let count = 0;
 let userGreeting = '';
+
+
+rl.on('close', function() {
+  console.log('До свидания!');
+  exit();
+});
+
 const getData = function () {
   if (count === 0) {userGreeting = 'Введите текст:\n';}
   else { userGreeting = '';}
@@ -34,7 +41,3 @@ const getData = function () {
 };
 getData();
 
-rl.on('close', function() {
-  console.log('До свидания!');
-  exit();
-});
